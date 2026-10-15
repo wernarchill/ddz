@@ -211,7 +211,14 @@ class LobbyRenderer {
             c, "共需：54 张牌面 + 1 张牌背 + 桌面背景 + 按钮/面板/头像/标记 + 可选特效帧",
             V.W / 2f, V.H - 118f, 18f, UiDraw.TEXT_DIM, Paint.Align.CENTER
         )
-        UiDraw.button(c, p, app.state, "close_checklist", "关闭", V.W / 2f, V.H - 92f, 180f, 50f, primary = true)
+        // 注意参数顺序：UiDraw.button(canvas, painter, textures, state, id, label, cx, cy, w, h, ...)
+        // 这里曾经漏传 textures，导致后面所有实参整体错位一格。
+        UiDraw.button(
+            c, p, app.textures, app.state,
+            "close_checklist", "关闭",
+            V.W / 2f, V.H - 92f, 180f, 50f,
+            primary = true
+        )
     }
 
     /**
