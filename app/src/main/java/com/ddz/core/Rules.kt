@@ -19,9 +19,10 @@ object Rules {
         if (candidate.type == ComboType.PASS) return false
         if (target == null || target.type == ComboType.PASS || !target.isValid) return true
 
-        // 王炸最大（一局只有一副王，理论上 target 不可能是 ROCKET）
-        if (candidate.type == ComboType.ROCKET) return true
+        // 王炸最大。**先判目标是不是王炸**：王炸不可被任何牌压过（包括另一个王炸）。
+        // 实战里一副牌只有一对王，"王炸压王炸"不可能发生；这里明确返回 false 是为了逻辑自洽。
         if (target.type == ComboType.ROCKET) return false
+        if (candidate.type == ComboType.ROCKET) return true
 
         if (candidate.type == ComboType.BOMB) {
             return if (target.type == ComboType.BOMB) candidate.mainRank > target.mainRank else true
@@ -359,8 +360,14 @@ object Rules {
     }
 
     /**
-     * 取最省牌的翅膀：[count] 个 rank，每个 rank 取 [per] 张，rank 尽量小。
-     * [per] == 1 时优先取只有 1 张的 rank（不拆对子/三张）；[per] == 2 时只取恰好成对的 rank。
+     * 取最省牌的翅膀。rank 尽量小，优先不拆散对子/三张/炸弹。
+     *
+     * [per] == 1：需要 [count] 张**单牌**。关键点是**允许同一个 rank 贡献多张** ——
+     *   对子可以拆成两张单牌、三张可以拆成三张单牌。
+     *   之前每个 rank 只取 1 张，会导致 `33344455` 这种本身就是合法「飞机带两单」的牌
+     *   永远枚举不出来，AI 就会错过"一把走完"的必胜机会。
+     * [per] == 2：需要 [count] 个**对子**，每个 rank 必须恰好有 2 张
+     *   （有 3 张不能当翅膀：多出来的那张无处安放，牌型识别会拒绝）。
      */
     private fun smallestWing(
         byRank: Map<Int, List<Card>>,
@@ -368,35 +375,44 @@ object Rules {
         count: Int,
         per: Int
     ): List<Card>? {
-        val chosen = ArrayList<List<Card>>(count)
         if (per == 1) {
             val ones = ArrayList<List<Card>>()
             val twos = ArrayList<List<Card>>()
-            val threes = ArrayList<List<Card>>()
+            val higher = ArrayList<List<Card>>()
             for (r in CardConst.R3..CardConst.JOKER_BIG) {
                 if (banned.contains(r)) continue
                 val g = byRank[r] ?: continue
                 when (g.size) {
                     1 -> ones.add(g)
                     2 -> twos.add(g)
-                    3, 4 -> threes.add(g) // 三张/炸弹都可以拆一张出来当单牌
+                    else -> higher.add(g) // 3 或 4 张；最多只取 3 张当翅膀
                 }
             }
-            for (g in ones) { if (chosen.size >= count) break; chosen.add(g.subList(0, 1)) }
-            for (g in twos) { if (chosen.size >= count) break; chosen.add(g.subList(0, 1)) }
-            for (g in threes) { if (chosen.size >= count) break; chosen.add(g.subList(0, 1)) }
-        } else {
-            for (r in CardConst.R3..CardConst.JOKER_BIG) {
-                if (banned.contains(r)) continue
-                val g = byRank[r] ?: continue
-                if (g.size == 2) {
-                    chosen.add(g)
-                    if (chosen.size >= count) break
-                }
+            val out = ArrayList<Card>(count)
+            // 第一轮：每个 rank 先各贡献 1 张，尽量不拆对子
+            for (g in ones) { if (out.size >= count) break; out.add(g[0]) }
+            for (g in twos) { if (out.size >= count) break; out.add(g[0]) }
+            for (g in higher) { if (out.size >= count) break; out.add(g[0]) }
+            // 第二轮：还不够就把对子/三张的第 2 张也当单牌用
+            for (g in twos) { if (out.size >= count) break; out.add(g[1]) }
+            for (g in higher) { if (out.size >= count) break; out.add(g[1]) }
+            // 第三轮：仍然不够才拆三张的第 3 张
+            for (g in higher) { if (out.size >= count) break; out.add(g[2]) }
+            return if (out.size < count) null else out
+        }
+
+        // per == 2：每个 rank 恰好 2 张才可用
+        val chosen = ArrayList<List<Card>>(count)
+        for (r in CardConst.R3..CardConst.JOKER_BIG) {
+            if (banned.contains(r)) continue
+            val g = byRank[r] ?: continue
+            if (g.size == 2) {
+                chosen.add(g)
+                if (chosen.size >= count) break
             }
         }
         if (chosen.size < count) return null
-        val out = ArrayList<Card>(count * per)
+        val out = ArrayList<Card>(count * 2)
         for (g in chosen) out.addAll(g)
         return out
     }

@@ -14,6 +14,7 @@ import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
+import com.ddz.CrashLog
 
 /**
  * 唯一的自绘视图：一个渲染线程 + 一块 Surface。
@@ -147,8 +148,13 @@ class GameSurfaceView(context: Context) : SurfaceView(context), SurfaceHolder.Ca
                     } catch (_: Exception) {
                     }
                 }
-            } catch (e: Exception) {
-                // 单帧异常不能让渲染线程死掉，否则画面会永久冻结
+            } catch (t: Throwable) {
+                // 注意这里是 Throwable 而不是 Exception。
+                // 渲染线程里抛出的 Error（OutOfMemoryError、StackOverflowError、
+                // NoClassDefFoundError 等）同样会杀掉整个进程，而 Exception 接不住它们 ——
+                // 表现就是"一打开就闪退"且任何界面都看不到。这里接住并记录下来，
+                // 既能让应用活下去，又能把堆栈留给下次启动显示。
+                CrashLog.record(t, "渲染线程")
                 try {
                     Thread.sleep(32)
                 } catch (_: InterruptedException) {

@@ -50,13 +50,17 @@ data class Card(val rank: Int, val suit: Int) {
             return prefix + textureSuffix
         }
 
-    /** 贴图用的点数后缀：3..10 与 2 直接用数字，其余小写 j / q / k / a */
+    /** 贴图用的点数后缀：3..10 直接用数字，J/Q/K/A 小写，**2 也是 "2" 而不是 rank 值 15** */
     val textureSuffix: String
         get() = when (rank) {
             CardConst.RJ -> "j"
             CardConst.RQ -> "q"
             CardConst.RK -> "k"
             CardConst.RA -> "a"
+            // 必须显式列出 R2：rank 15 直接 toString() 会得到 "15"，
+            // 于是四张 2 的贴图名变成 card_s_15.png，永远找不到图 → 全部退化成占位图。
+            // 这个 bug 是自测里的 "texture 黑桃2" 断言抓出来的。
+            CardConst.R2 -> "2"
             else -> rank.toString()
         }
 

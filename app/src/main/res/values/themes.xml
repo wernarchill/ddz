@@ -1,7 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- 纯框架主题，不依赖 AppCompat / Material Components -->
-    <style name="Theme.DDZ" parent="@android:style/Theme.Material.NoActionBar.Fullscreen">
+    <!--
+        纯框架主题，不依赖 AppCompat / Material Components。
+
+        父样式刻意用 Theme.Material.NoActionBar（这是最基础、必定存在的框架深色主题），
+        全屏改为下面的 windowFullscreen 显式声明。
+        不用 Theme.Material.NoActionBar.Fullscreen 的原因：它虽然也属于框架主题，
+        但依赖一个不那么常用的预置样式名；一旦解析失败，表现就是启动即崩（闪退），
+        而且报错信息里不会直接指向主题。自己显式声明等价且零风险。
+    -->
+    <style name="Theme.DDZ" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowFullscreen">true</item>
         <item name="android:windowBackground">@color/bg_dark</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>

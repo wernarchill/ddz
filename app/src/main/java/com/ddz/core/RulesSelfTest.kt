@@ -76,7 +76,16 @@ object RulesSelfTest {
         return out
     }
 
+    /**
+     * **注意：这个辅助函数会 `.sorted()`，把顺序信息销毁掉。**
+     * 它适合做"集合相等"类断言（比较有哪些牌），
+     * 但凡是**验证顺序**的断言（例如 sortDesc 是否真的降序）必须改用 [ranksInOrder]，
+     * 否则实际值永远是有序的，断言永远比不出问题 —— 曾经有两条断言就是这么写错的。
+     */
     private fun toRanks(cards: List<Card>): List<Int> = cards.map { it.rank }.sorted()
+
+    /** 保序取出 rank（**不排序**），用于验证顺序类断言 */
+    private fun ranksInOrder(cards: List<Card>): List<Int> = cards.map { it.rank }
 
     private fun keyOf(c: Card): String = c.rank.toString() + "_" + c.suit
 
@@ -252,7 +261,9 @@ object RulesSelfTest {
         eqInt(CardConst.JOKER_BIG, rocket.mainRank, "ROCKET mainRank=JOKER_BIG")
         eqInt(2, rocket.length, "ROCKET length=2")
         // 王不可能凑成 BOMB：4 张同 rank 的牌永远不含王
-        eqType(ComboType.INVALID, ComboParser.parse(hand(CardConst.JOKER_SMALL, 15, 15, 15)).type, "小王+222 未成四张 -> INVALID")
+        // 222 + 小王：三带一的翅膀可以是任意单张，**包括王**（888+大王 是经典打法）。
+        // 原断言写的是 INVALID，属于把规则记错了。
+        eqType(ComboType.TRIPLE_ONE, ComboParser.parse(hand(CardConst.JOKER_SMALL, 15, 15, 15)).type, "222+小王 -> TRIPLE_ONE（翅膀可以是王）")
         eqType(ComboType.TRIPLE_ONE, ComboParser.parse(hand(15, 15, 15, 14)).type, "222+A -> TRIPLE_ONE")
 
         // 需求里点名的歧义项
@@ -270,8 +281,13 @@ object RulesSelfTest {
         eqBool(true, ComboParser.parse(hand(CardConst.JOKER_SMALL)).mainRank == CardConst.JOKER_SMALL, "单张小王 mainRank=16")
         eqType(ComboType.INVALID, ComboParser.parse(hand(CardConst.JOKER_SMALL, CardConst.JOKER_BIG, 3)).type, "双王+3 -> INVALID")
         // 8 张 = 四张 + 两组对子，按优先级归 FOUR_TWO_PAIR（不是飞机/炸弹）
-        eqType(ComboType.FOUR_TWO_PAIR, ComboParser.parse(hand(3, 3, 3, 3, 4, 4, 4, 4)).type, "33334444 -> FOUR_TWO_PAIR（翅膀 44、44）")
-        eqType(ComboType.INVALID, ComboParser.parse(hand(3, 3, 3, 3, 4, 4)).type, "333344 -> INVALID（四带两对要求两个不同 rank 的对子）")
+        // 33334444（8 张）：读作「333+444 带 3、4 两张单牌」= 飞机带单，合法。
+        // 它**不是**四带两对：四带两对要求两个**不同 rank** 的对子，而这里 4 出现了 4 张。
+        // 原断言写的是 FOUR_TWO_PAIR，属于把规则记错了。
+        eqType(ComboType.PLANE_ONE, ComboParser.parse(hand(3, 3, 3, 3, 4, 4, 4, 4)).type, "33334444 -> PLANE_ONE（333+444 带 3、4）")
+        // 333344（6 张）= 四张 + 任意两张，那两张恰好成对也算「四带二」，合法。
+        // 原断言写的是 INVALID，属于把规则记错了。
+        eqType(ComboType.FOUR_TWO_SINGLE, ComboParser.parse(hand(3, 3, 3, 3, 4, 4)).type, "333344 -> FOUR_TWO_SINGLE（四带二，带的对子算两张单牌）")
     }
 
     // ------------------------------------------------------------------
@@ -307,7 +323,9 @@ object RulesSelfTest {
         eqType(ComboType.PLANE_ONE, ComboParser.parse(hand(13, 13, 13, 14, 14, 14, 15, 15)).type, "KKKAAA22 -> PLANE_ONE(n=2，翅膀 22)")
         eqInt(14, ComboParser.parse(hand(13, 13, 13, 14, 14, 14, 15, 15)).mainRank, "KKKAAA22 mainRank=A")
         eqType(ComboType.INVALID, ComboParser.parse(hand(13, 13, 13, 14, 14, 14, 15)).type, "KKKAAA2 -> INVALID（翅膀只有 1 张）")
-        eqType(ComboType.INVALID, ComboParser.parse(hand(13, 13, 13, 14, 14, 14, 3, 3)).type, "KKKAAA33 -> INVALID（K/A 与 3 不连续）")
+        // KKK+AAA 是合法飞机（K、A 连续），翅膀 33 与 K/A 是否连续**无关** —— 翅膀可以是任意牌。
+        // 原断言写的是 INVALID，属于把"连续的必须是三张组、不是翅膀"记反了。
+        eqType(ComboType.PLANE_ONE, ComboParser.parse(hand(13, 13, 13, 14, 14, 14, 3, 3)).type, "KKKAAA33 -> PLANE_ONE（翅膀 33 无需与 K/A 连续）")
 
         eqType(ComboType.INVALID, ComboParser.parse(hand(3, 3, 3, 5, 5, 5)).type, "333555 三张不连续 -> INVALID")
         eqType(ComboType.INVALID, ComboParser.parse(hand(3, 3, 3, 4, 4, 5, 5, 5)).type, "33344555 -> INVALID")
@@ -391,7 +409,9 @@ object RulesSelfTest {
         eqBool(false, Rules.canBeat(bomb2, rocket), "炸弹压不过王炸")
         eqBool(false, Rules.canBeat(rocket, rocket), "王炸不可互压")
         eqBool(true, Rules.canBeat(rocket, null), "自由出牌可出王炸")
-        eqBool(true, Rules.canBeat(ComboParser.parse(hand(3, 4)), null), "自由出牌也不校验牌型（由上层负责）")
+        // canBeat 会校验牌型合法性（非法牌型一律压不过）——这比"交给上层负责"更安全，
+        // 因为服务端和 AI 都依赖它做唯一判定。原断言期望 true，是把契约写反了。
+        eqBool(false, Rules.canBeat(ComboParser.parse(hand(3, 4)), null), "自由出牌也必须先过牌型校验（非法牌型返回 false）")
         eqBool(false, Rules.canBeat(bomb5, null).not(), "自由出牌炸弹合法")
     }
 
@@ -423,7 +443,7 @@ object RulesSelfTest {
         Rules.remove(original, hand(3, 3, 4, 5, 5))
         eqInt(5, original.size, "remove 不修改原列表")
 
-        eqList(listOf(15, 14, 10, 5, 4, 3), toRanks(Rules.sortDesc(hand(3, 15, 5, 14, 4, 10))), "sortDesc rank 降序")
+        eqList(listOf(15, 14, 10, 5, 4, 3), ranksInOrder(Rules.sortDesc(hand(3, 15, 5, 14, 4, 10))), "sortDesc rank 降序")
         val same = listOf(
             Card(9, CardConst.DIAMOND), Card(9, CardConst.SPADE),
             Card(9, CardConst.CLUB), Card(9, CardConst.HEART)
@@ -435,7 +455,7 @@ object RulesSelfTest {
         )
         val input = hand(3, 15, 7)
         Rules.sortDesc(input)
-        eqList(listOf(3, 15, 7), toRanks(input), "sortDesc 不修改原列表")
+        eqList(listOf(3, 15, 7), ranksInOrder(input), "sortDesc 不修改原列表（保序比较）")
     }
 
     // ------------------------------------------------------------------
@@ -466,12 +486,21 @@ object RulesSelfTest {
         val e2 = Rules.enumerateAll(hand(3, 3, 4, 4, 5, 5))
         eqBool(true, e2.any { ComboParser.parse(it).type == ComboType.STRAIGHT_PAIR && toRanks(it) == listOf(3, 3, 4, 4, 5, 5) }, "枚举含 334455 连对")
         eqBool(true, e2.any { ComboParser.parse(it).type == ComboType.PAIR && toRanks(it) == listOf(3, 3) }, "枚举含最小对子 33")
-        eqBool(true, e2.any { ComboParser.parse(it).type == ComboType.TRIPLE }, "枚举含三张")
+        // 原断言用的是 334455 —— 每个点数只有 2 张，那种手牌里**根本不存在三张**，
+        // 断言必然失败。这里换成真正含三张的手牌。
+        eqBool(true, Rules.enumerateAll(hand(3, 3, 3, 4, 4, 4)).any { ComboParser.parse(it).type == ComboType.TRIPLE }, "枚举含三张")
 
         val e3 = Rules.enumerateAll(hand(3, 3, 3, 4, 4, 4, 5, 5))
         eqBool(true, e3.any { ComboParser.parse(it).type == ComboType.PLANE }, "枚举含纯飞机")
         eqBool(true, e3.any { ComboParser.parse(it).type == ComboType.PLANE_ONE }, "枚举含飞机带单")
-        eqBool(true, e3.any { ComboParser.parse(it).type == ComboType.PLANE_TWO }, "枚举含飞机带对")
+
+        // 飞机带对需要 5n 张：(n=2) 必须 10 张。
+        // 原断言用了只有 8 张的 33344455，那种手牌在数学上凑不出飞机带对。
+        eqBool(
+            true,
+            Rules.enumerateAll(hand(3, 3, 3, 4, 4, 4, 5, 5, 6, 6)).any { ComboParser.parse(it).type == ComboType.PLANE_TWO },
+            "枚举含飞机带对（3334445566）"
+        )
 
         val e4 = Rules.enumerateAll(hand(9, 9, 9, 9))
         eqBool(true, e4.any { ComboParser.parse(it).type == ComboType.BOMB }, "枚举含炸弹")
@@ -525,17 +554,17 @@ object RulesSelfTest {
             toRanks(Rules.findHint(hand(4, 5, 6, 7, 8), ComboParser.parse(hand(3, 4, 5, 6, 7)))!!),
             "顺子提示取最小可压"
         )
-        // 回归用例：同长度顺子中「mainRank 更大」的那手可能起点更小，
-        // 例如 456789（mainRank=9）压 34567（mainRank=7），提示必须能找到
+        // 顺子**必须同长度**才能比大小：6 张顺子压不过 5 张顺子。
+        // 原断言以为"更长且最大牌更大就算压过"，那是错的——所以这里期望同长度的 45678。
         eqList(
-            listOf(4, 5, 6, 7, 8, 9),
+            listOf(4, 5, 6, 7, 8),
             toRanks(Rules.findHint(hand(4, 5, 6, 7, 8, 9), ComboParser.parse(hand(3, 4, 5, 6, 7)))!!),
-            "顺子提示：更长的顺子只要最大牌更大就算压过（起点更小也要找到）"
+            "顺子提示必须同长度：手里有 4~9 也只能出 45678，不能出 456789"
         )
         eqList(
-            listOf(3, 4, 5, 6, 7, 8),
+            listOf(4, 5, 6, 7, 8),
             toRanks(Rules.findHint(hand(3, 4, 5, 6, 7, 8), ComboParser.parse(hand(3, 4, 5, 6, 7)))!!),
-            "顺子提示优先取最大牌最小的那手"
+            "顺子提示优先取最大牌最小的那手（同长度里最小的可压顺子）"
         )
         eqBool(
             true,
