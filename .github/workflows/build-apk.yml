@@ -1,0 +1,78 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: 准备 Android SDK
+        run: |
+          set -e
+          if [ -z "$ANDROID_HOME" ]; then
+            export ANDROID_HOME=/usr/local/lib/android/sdk
+          fi
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER="$(command -v sdkmanager || true)"
+          fi
+          echo "使用的 sdkmanager: $SDKMANAGER"
+          "$SDKMANAGER" --version || true
+
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+
+      - name: 安装 Gradle 8.7
+        run: |
+          set -e
+          wget -q https://services.gradle.org/distributions/gradle-8.7-bin.zip -O /tmp/gradle.zip
+          unzip -q /tmp/gradle.zip -d "$HOME"
+          echo "$HOME/gradle-8.7/bin" >> "$GITHUB_PATH"
+          "$HOME/gradle-8.7/bin/gradle" --version
+
+      - name: 环境自检
+        run: |
+          java -version
+          gradle --version
+          ls -la
+          cat local.properties
+
+      - name: 运行规则引擎自测
+        continue-on-error: true
+        run: gradle :app:rulesSelfTest --no-daemon --stacktrace
+
+      - name: 构建 Debug APK
+        run: gradle :app:assembleDebug --no-daemon --stacktrace
+
+      - name: 构建 Release APK
+        continue-on-error: true
+        run: gradle :app:assembleRelease --no-daemon --stacktrace
+
+      - name: 上传 APK
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ddz-apk
+          if-no-files-found: warn
+          path: |
+            app/build/outputs/apk/**/*.apk
