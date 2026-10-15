@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    启动图标的「默认配置」版本。
+
+    minSdk 已经是 26，实际运行时一定会命中 mipmap-anydpi-v26/ic_launcher.xml（自适应图标），
+    这个文件的作用是补上无版本限定的兜底配置，避免构建期出现
+    MissingDefaultResource（"资源没有默认版本"）类的报错。
+
+    换成正式美术资源时，直接把本文件替换为 mipmap-mdpi/hdpi/xhdpi/xxhdpi/xxxhdpi 下的 PNG 即可。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 底：绿色圆角方块 -->
+    <path
+        android:fillColor="#FF1B4332"
+        android:pathData="M12,4 L96,4 A8,8 0 0 1 104,12 L104,96 A8,8 0 0 1 96,104 L12,104 A8,8 0 0 1 4,96 L4,12 A8,8 0 0 1 12,4 Z" />
+
+    <!-- 后面那张牌 -->
+    <path
+        android:fillColor="#FFBDBDBD"
+        android:pathData="M28,26 L56,26 L56,74 L28,74 Z" />
+
+    <!-- 前面那张牌 -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M48,34 L78,34 L78,84 L48,84 Z" />
+
+    <!-- 牌面红色方块 -->
+    <path
+        android:fillColor="#FFD32F2F"
+        android:pathData="M63,48 L74,60 L63,72 L52,60 Z" />
+</vector>

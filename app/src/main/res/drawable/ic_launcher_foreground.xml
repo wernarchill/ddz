@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 占位启动图标前景：两张牌 + 红色方块。交付正式贴图后可用 PNG 替换。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 后面那张牌 -->
+    <path
+        android:fillColor="#FFEFEFEF"
+        android:pathData="M28,26 L56,26 L56,74 L28,74 Z" />
+    <path
+        android:fillColor="#FF9E9E9E"
+        android:pathData="M30,28 L54,28 L54,72 L30,72 Z" />
+
+    <!-- 前面那张牌 -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M48,34 L78,34 L78,84 L48,84 Z" />
+    <path
+        android:fillColor="#FFBDBDBD"
+        android:pathData="M50,36 L76,36 L76,82 L50,82 Z" />
+
+    <!-- 牌面红色方块（占位用花色） -->
+    <path
+        android:fillColor="#FFD32F2F"
+        android:pathData="M63,48 L74,60 L63,72 L52,60 Z" />
+</vector>

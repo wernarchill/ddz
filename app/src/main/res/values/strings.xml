@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">斗地主</string>
+    <string name="permission_notification_hint">开启通知后，轮到您出牌时会收到提醒</string>
+    <string name="net_error">网络连接中断</string>
+    <string name="reconnecting">正在重连…</string>
+</resources>
