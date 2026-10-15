@@ -10,33 +10,32 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * 极简崩溃记录器。
+ * 极简崩溃记录器 + 启动阶段打点。
  *
  * ## 为什么需要它
  * 这个项目在开发机上**无法编译、无法调试**（命令行起不来、没有 Android SDK），
- * 出问题只能靠「把日志发给我」。而抓 logcat 需要额外装 platform-tools。
+ * 出了问题只能靠「把日志发给我」，而抓 logcat 需要额外装 platform-tools。
  *
- * 这里换一条不需要任何工具的路：任何线程的未捕获异常/错误都会把堆栈写进应用私有目录，
- * **下次启动时直接把关键几行画在屏幕上**，截个图就能传出去。
- *
- * ## 覆盖范围
- * - 主线程崩溃（启动即闪退）
- * - 渲染线程抛出的 `Error`（这是最容易被忽略的一类：`catch (Exception)` 接不住，
- *   而 Android 上任何线程的未捕获 Throwable 都会杀掉整个进程）
- * - 网络线程、广播线程的崩溃
- *
- * 报告会同时写两份：应用私有目录（供界面读取显示）和外部私有目录
- * （`Android/data/com.ddz/files/`，方便用文件管理器直接取出完整堆栈）。
+ * ## 两层机制
+ * 1. **未捕获异常处理器**：任何线程的未捕获 Throwable 都会把堆栈写进文件，
+ *    下次启动时用纯文本界面显示出来。
+ * 2. **启动阶段打点（breadcrumb）**：每走一步就把「走到哪儿了」落盘。
+ *    这一层专门用来对付**第 1 层抓不到的死法**：
+ *      - 崩溃发生在 Activity 实例化 / 主题解析阶段（比 install() 更早）；
+ *      - 原生层崩溃（SIGSEGV），根本不走 Java 异常处理器；
+ *      - 进程被系统直接杀掉。
+ *    这些情况下第 1 层什么都留不下，但「最后停在哪一步」一定留得下。
  */
 object CrashLog {
 
-    private const val FILE_NAME = "last_crash.txt"
+    private const val CRASH_FILE = "last_crash.txt"
+    private const val BOOT_FILE = "last_boot.txt"
+    private const val BOOT_DONE = "启动完成"
     private const val TAG = "DDZ"
     private const val MAX_APP_FRAMES = 14
 
     private var appContext: Context? = null
 
-    /** 非致命异常只记第一次，避免渲染循环每帧刷盘 */
     @Volatile
     private var recordedNonFatal = false
 
@@ -46,14 +45,32 @@ object CrashLog {
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
             try {
-                write(app, buildReport(thread.name, error, "未捕获"))
+                write(app, CRASH_FILE, buildReport(thread.name, error, "未捕获"))
                 Log.e(TAG, "崩溃已记录", error)
             } catch (t: Throwable) {
                 Log.e(TAG, "写崩溃日志失败", t)
             }
-            // 交回系统原来的处理器，保持标准行为（logcat + 结束进程）
             previous?.uncaughtException(thread, error)
         }
+    }
+
+    /**
+     * 启动阶段打点：**立刻落盘**。
+     *
+     * 刻意用同步写 + 追加，因为它的使用场景就是「下一行可能就把进程干掉了」，
+     * 任何缓存/异步都会丢掉最关键的那一条。
+     */
+    fun mark(context: Context, stage: String) {
+        try {
+            val line = "${stamp()}  $stage\n"
+            File(context.filesDir, BOOT_FILE).appendText(line)
+        } catch (_: Throwable) {
+        }
+    }
+
+    /** 第一帧成功绘制后调用：标记「启动完成」，此后不再报告 */
+    fun bootCompleted(context: Context) {
+        mark(context, BOOT_DONE)
     }
 
     /** 记录一个**不杀进程**的异常（典型场景：渲染循环里接住了 Throwable） */
@@ -62,17 +79,53 @@ object CrashLog {
         recordedNonFatal = true
         val app = appContext ?: return
         try {
-            write(app, buildReport(Thread.currentThread().name, error, where))
+            write(app, CRASH_FILE, buildReport(Thread.currentThread().name, error, where))
             Log.e(TAG, "已记录非致命异常（$where）", error)
         } catch (t: Throwable) {
             Log.e(TAG, "写崩溃日志失败", t)
         }
     }
 
-    /** 取出上次的崩溃报告并清空（只在启动时调用一次）。没有则返回 null */
+    /**
+     * 取出「上次启动的异常信息」并清空，供界面显示。没有则返回 null。
+     *
+     * 两种情形都会产出报告：
+     *  - 有崩溃堆栈（正常崩溃）；
+     *  - **没有崩溃堆栈，但启动打点没走到「启动完成」** ——
+     *    这说明进程是在 Java 异常处理器之外死掉的（原生崩溃 / 被系统杀 / 崩在更早的阶段），
+     *    此时「最后停在哪一步」就是最有价值的线索。
+     */
     fun consume(context: Context): String? {
+        val crash = readAndDelete(context, CRASH_FILE)
+        val boot = readAndDelete(context, BOOT_FILE)
+        val bootIncomplete = boot != null && !boot.contains(BOOT_DONE)
+        if (crash == null && !bootIncomplete) return null
+
+        return buildString {
+            append("=== 上次启动没有正常完成 ===\n")
+            append("时间：").append(stamp()).append('\n')
+            append("包名：").append(context.packageName).append('\n')
+            append("设备：").append(deviceInfo()).append('\n')
+            append('\n')
+            if (crash != null) {
+                append("--- 崩溃堆栈 ---\n")
+                append(crash)
+                append('\n')
+            } else {
+                append("--- 没有捕获到 Java 异常 ---\n")
+                append("这通常意味着：原生层崩溃（SIGSEGV）、进程被系统杀死，\n")
+                append("或者崩溃发生在 Activity 实例化 / 主题解析阶段（比我们的处理器更早）。\n")
+                append("请重点看下面的「最后停在哪一步」。\n\n")
+            }
+            append("--- 启动阶段打点（最后一行就是死亡位置）---\n")
+            append(boot ?: "(没有打点记录：说明连 MainActivity.onCreate 都没进来，\n" +
+                "问题在 Activity 实例化、主题解析或安装包本身)\n")
+        }
+    }
+
+    private fun readAndDelete(context: Context, name: String): String? {
         return try {
-            val f = File(context.filesDir, FILE_NAME)
+            val f = File(context.filesDir, name)
             if (!f.exists()) return null
             val text = f.readText()
             f.delete()
@@ -82,20 +135,34 @@ object CrashLog {
         }
     }
 
-    private fun write(context: Context, report: String) {
+    private fun write(context: Context, name: String, report: String) {
         try {
-            File(context.filesDir, FILE_NAME).writeText(report)
+            File(context.filesDir, name).writeText(report)
         } catch (_: Throwable) {
-            // 私有目录写不进去也不能再抛，否则就成了"崩溃处理器自己崩"
         }
+        // 同时写一份到外部私有目录，方便用文件管理器取出
         try {
             val dir = context.getExternalFilesDir(null)
             if (dir != null) {
                 if (!dir.exists()) dir.mkdirs()
-                File(dir, FILE_NAME).writeText(report)
+                File(dir, name).writeText(report)
             }
         } catch (_: Throwable) {
         }
+    }
+
+    private fun stamp(): String = try {
+        SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.US).format(Date())
+    } catch (t: Throwable) {
+        "?"
+    }
+
+    private fun deviceInfo(): String = try {
+        "Android ${android.os.Build.VERSION.RELEASE}(API ${android.os.Build.VERSION.SDK_INT}) " +
+            "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} " +
+            "ABI=${android.os.Build.SUPPORTED_ABIS.joinToString(",")}"
+    } catch (t: Throwable) {
+        "?"
     }
 
     private fun buildReport(threadName: String, error: Throwable, where: String): String {
@@ -105,13 +172,8 @@ object CrashLog {
         } catch (_: Throwable) {
         }
         val full = sw.toString()
-        val time = try {
-            SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
-        } catch (t: Throwable) {
-            "?"
-        }
         return buildString {
-            append("时间：").append(time).append('\n')
+            append("时间：").append(stamp()).append('\n')
             append("来源：").append(where).append('\n')
             append("线程：").append(threadName).append('\n')
             append("异常：").append(error.javaClass.name).append('\n')

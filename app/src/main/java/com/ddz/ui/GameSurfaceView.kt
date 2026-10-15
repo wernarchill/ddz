@@ -36,6 +36,10 @@ class GameSurfaceView(context: Context) : SurfaceView(context), SurfaceHolder.Ca
     @Volatile
     private var running = false
 
+    /** 是否已经打过「启动完成」标记（只在第一帧成功后打一次） */
+    @Volatile
+    private var bootMarked = false
+
     /**
      * 虚拟坐标 → 屏幕坐标的映射。
      *
@@ -126,6 +130,7 @@ class GameSurfaceView(context: Context) : SurfaceView(context), SurfaceHolder.Ca
     }
 
     private fun renderLoop() {
+        CrashLog.mark(context, "渲染线程启动")
         while (running) {
             val frameStart = System.currentTimeMillis()
             try {
@@ -142,6 +147,12 @@ class GameSurfaceView(context: Context) : SurfaceView(context), SurfaceHolder.Ca
                 }
                 try {
                     drawFrame(canvas, frameStart)
+                    // 第一帧画出来了就说明整条链路（Activity → 视图 → 渲染线程 → 绘制）都通了。
+                    // 打上"启动完成"标记，下次启动就不会再报「启动没走完」。
+                    if (!bootMarked) {
+                        bootMarked = true
+                        CrashLog.bootCompleted(context)
+                    }
                 } finally {
                     try {
                         holder.unlockCanvasAndPost(canvas)

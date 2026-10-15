@@ -1,6 +1,7 @@
 package com.ddz.ui
 
 import android.content.Context
+import com.ddz.CrashLog
 import com.ddz.audio.Sfx
 import com.ddz.core.Card
 import com.ddz.core.Combo
@@ -96,15 +97,26 @@ class AppController(
     private var released = false
 
     init {
+        // 走到这一行说明前面四个字段初始化（ViewState / Textures / Painter / Sfx）全部成功了。
+        // 启动打点里如果没有这一条，崩溃就在那四个构造器之一。
+        CrashLog.mark(context, "AppController.init 开始（字段初始化均成功）")
+
         state.clientId = prefs.getString(KEY_CLIENT_ID, null) ?: UUID.randomUUID().toString().also {
             prefs.edit().putString(KEY_CLIENT_ID, it).apply()
         }
         state.nickname = prefs.getString(KEY_NICKNAME, null)
             ?: "玩家${Random.nextInt(1000, 9999)}"
+        CrashLog.mark(context, "prefs 读取完成")
+
         state.myIp = HostServer.localIpv4()
+        CrashLog.mark(context, "本机 IP 探测完成：${state.myIp}")
+
         startScanner()
+        CrashLog.mark(context, "UDP 房间扫描器已启动")
+
         // 预热牌面贴图，避免第一次进牌桌时集中解码造成掉帧
         textures.preloadAsync(AssetsSpec.cards + listOf("card_back"), Textures.CARD_TEX_W)
+        CrashLog.mark(context, "AppController 构造完成")
     }
 
     private fun post(block: () -> Unit) {

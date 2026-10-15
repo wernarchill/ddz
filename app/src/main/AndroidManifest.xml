@@ -25,8 +25,13 @@
         android:supportsRtl="false"
         android:theme="@style/Theme.DDZ">
 
+        <!--
+            这里刻意写**全限定类名**而不是 ".MainActivity"：
+            debug 构建类型带 applicationIdSuffix=".debug"，相对名是否被正确重写
+            依赖 AGP 的合并行为。写全名可以完全规避这个不确定性。
+        -->
         <activity
-            android:name=".MainActivity"
+            android:name="com.ddz.MainActivity"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|smallestScreenSize|uiMode|density"
             android:exported="true"
             android:launchMode="singleTask"

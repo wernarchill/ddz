@@ -3,6 +3,7 @@ package com.ddz.ui
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import com.ddz.CrashLog
 import com.ddz.core.Card
 import java.util.concurrent.Executors
 
@@ -22,6 +23,10 @@ class Textures(private val context: Context) {
     private var assetNames: Set<String>? = null
     private val decoder = Executors.newSingleThreadExecutor { r ->
         Thread(r, "ddz-tex").also { it.isDaemon = true }
+    }
+
+    init {
+        CrashLog.mark(context, "Textures: 构造完成")
     }
 
     /** 返回 null 表示这张图不存在（或解码失败），调用方应走占位绘制 */
